@@ -40,7 +40,7 @@ main() {
     # Check for remote install repo
     if [ -d "$REPO_DIR" ]; then
         echo ""
-        read -p "Remove cloned repository at $REPO_DIR? [y/N] " -n 1 -r
+        read -p "Remove cloned repository at $REPO_DIR? [y/N] " -n 1 -r < /dev/tty
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             rm -rf "$REPO_DIR"

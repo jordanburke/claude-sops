@@ -79,7 +79,7 @@ check_dependencies() {
             echo "  # SOPS: download from https://github.com/getsops/sops/releases"
         fi
         echo ""
-        read -p "Continue installation anyway? [y/N] " -n 1 -r
+        read -p "Continue installation anyway? [y/N] " -n 1 -r < /dev/tty
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             exit 1
@@ -155,7 +155,7 @@ setup_age_key() {
 
     log_step "Setting up age encryption key"
 
-    read -p "Generate a new age key? [Y/n] " -n 1 -r
+    read -p "Generate a new age key? [Y/n] " -n 1 -r < /dev/tty
     echo
     if [[ $REPLY =~ ^[Nn]$ ]]; then
         log_warn "Skipping key generation"
@@ -196,7 +196,7 @@ setup_secrets_file() {
 
     log_step "Setting up secrets file"
 
-    read -p "Create a template secrets file? [Y/n] " -n 1 -r
+    read -p "Create a template secrets file? [Y/n] " -n 1 -r < /dev/tty
     echo
     if [[ $REPLY =~ ^[Nn]$ ]]; then
         log_warn "Skipping secrets file creation"
