@@ -2,6 +2,13 @@
 #
 # claude-sops installer
 #
+# Remote install:
+#   curl -fsSL https://raw.githubusercontent.com/jordanburke/claude-sops/main/install.sh | bash
+#
+# Local install:
+#   git clone https://github.com/jordanburke/claude-sops.git
+#   cd claude-sops && ./install.sh
+#
 
 set -euo pipefail
 
@@ -12,8 +19,10 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Configuration
+REPO_URL="https://github.com/jordanburke/claude-sops.git"
 INSTALL_DIR="${HOME}/.local/bin"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${HOME}/.local/share/claude-sops"
 CONFIG_DIR="${HOME}/.config/sops"
 AGE_KEY_DIR="${CONFIG_DIR}/age"
 
@@ -31,6 +40,20 @@ log_error() {
 
 log_step() {
     echo -e "${BLUE}[*]${NC} $1"
+}
+
+check_git() {
+    if ! command -v git &> /dev/null; then
+        log_error "git is required but not installed"
+        echo ""
+        echo "Install with:"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "  xcode-select --install"
+        else
+            echo "  sudo apt install git"
+        fi
+        exit 1
+    fi
 }
 
 check_dependencies() {
@@ -64,25 +87,69 @@ check_dependencies() {
     fi
 }
 
+clone_or_update_repo() {
+    log_step "Setting up claude-sops repository"
+
+    if [ -d "$REPO_DIR/.git" ]; then
+        log_info "Repository exists, pulling latest changes"
+        git -C "$REPO_DIR" pull --quiet origin main || true
+    else
+        log_info "Cloning repository to $REPO_DIR"
+        mkdir -p "$(dirname "$REPO_DIR")"
+        git clone --quiet "$REPO_URL" "$REPO_DIR"
+    fi
+}
+
+detect_install_source() {
+    # Check if we're running from a local clone or remotely
+    local script_dir=""
+
+    # If BASH_SOURCE is empty or stdin, we're being piped
+    if [ -z "${BASH_SOURCE[0]:-}" ] || [ "${BASH_SOURCE[0]}" = "bash" ]; then
+        return 1  # Remote install
+    fi
+
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+
+    # Check if we're in a git repo with the expected structure
+    if [ -f "$script_dir/bin/claude-sops" ] && [ -d "$script_dir/.git" ]; then
+        echo "$script_dir"
+        return 0  # Local install
+    fi
+
+    return 1  # Remote install
+}
+
 install_script() {
+    local source_dir="$1"
+
     log_step "Installing claude-sops to $INSTALL_DIR"
 
     mkdir -p "$INSTALL_DIR"
 
-    # Copy or symlink the script
+    # Remove existing installation
     if [ -L "$INSTALL_DIR/claude-sops" ] || [ -f "$INSTALL_DIR/claude-sops" ]; then
         log_warn "Removing existing installation"
         rm -f "$INSTALL_DIR/claude-sops"
     fi
 
     # Create symlink to allow updates via git pull
-    ln -s "$SCRIPT_DIR/bin/claude-sops" "$INSTALL_DIR/claude-sops"
-    log_info "Installed claude-sops (symlinked)"
+    ln -s "$source_dir/bin/claude-sops" "$INSTALL_DIR/claude-sops"
+    log_info "Installed claude-sops (symlinked to $source_dir)"
 }
 
 setup_age_key() {
     if [ -f "$AGE_KEY_DIR/keys.txt" ]; then
         log_info "Age key already exists at $AGE_KEY_DIR/keys.txt"
+        return
+    fi
+
+    # Check if age is installed before trying to generate key
+    if ! command -v age &> /dev/null; then
+        log_warn "age not installed, skipping key generation"
+        echo "After installing age, generate a key with:"
+        echo "  mkdir -p ~/.config/sops/age"
+        echo "  age-keygen -o ~/.config/sops/age/keys.txt"
         return
     fi
 
@@ -136,6 +203,8 @@ setup_secrets_file() {
         return
     fi
 
+    mkdir -p "$CONFIG_DIR"
+
     # Create .sops.yaml config
     if [ -f "$AGE_KEY_DIR/public.txt" ]; then
         PUBLIC_KEY=$(cat "$AGE_KEY_DIR/public.txt")
@@ -180,7 +249,7 @@ check_path() {
     if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
         log_warn "$INSTALL_DIR is not in your PATH"
         echo ""
-        echo "Add to your shell config:"
+        echo "Add to your shell config (~/.bashrc or ~/.zshrc):"
         echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
         echo ""
     fi
@@ -194,8 +263,20 @@ main() {
     echo "╚════════════════════════════════════════╝"
     echo ""
 
+    check_git
     check_dependencies
-    install_script
+
+    # Determine installation source
+    local source_dir
+    if source_dir=$(detect_install_source); then
+        log_info "Installing from local repository: $source_dir"
+    else
+        log_info "Installing from remote repository"
+        clone_or_update_repo
+        source_dir="$REPO_DIR"
+    fi
+
+    install_script "$source_dir"
     setup_age_key
     setup_secrets_file
     check_path
@@ -207,6 +288,9 @@ main() {
     echo "  1. Create/edit secrets: sops ~/.config/sops/secrets.yaml"
     echo "  2. Run Claude: claude-sops"
     echo "  3. Verify setup: claude-sops --check"
+    echo ""
+    echo "Update anytime with:"
+    echo "  git -C $source_dir pull"
     echo ""
 }
 

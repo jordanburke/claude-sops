@@ -12,6 +12,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 INSTALL_DIR="${HOME}/.local/bin"
+REPO_DIR="${HOME}/.local/share/claude-sops"
 CONFIG_DIR="${HOME}/.config/sops"
 
 log_info() {
@@ -34,6 +35,19 @@ main() {
         log_info "Removed $INSTALL_DIR/claude-sops"
     else
         log_warn "claude-sops not found in $INSTALL_DIR"
+    fi
+
+    # Check for remote install repo
+    if [ -d "$REPO_DIR" ]; then
+        echo ""
+        read -p "Remove cloned repository at $REPO_DIR? [y/N] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            rm -rf "$REPO_DIR"
+            log_info "Removed $REPO_DIR"
+        else
+            log_warn "Kept $REPO_DIR"
+        fi
     fi
 
     echo ""

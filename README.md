@@ -2,6 +2,35 @@
 
 Run [Claude Code](https://claude.ai/code) with SOPS-encrypted secrets automatically loaded as environment variables.
 
+## Install
+
+### One-liner (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jordanburke/claude-sops/main/install.sh | bash
+```
+
+### Prerequisites
+
+Install sops and age first:
+
+```bash
+# macOS
+brew install sops age
+
+# Debian/Ubuntu
+sudo apt install age
+# SOPS: download from https://github.com/getsops/sops/releases
+```
+
+### Manual Install
+
+```bash
+git clone https://github.com/jordanburke/claude-sops.git
+cd claude-sops
+./install.sh
+```
+
 ## Why?
 
 - **Git-friendly secrets**: Store encrypted secrets in your repo with visible keys
@@ -11,46 +40,18 @@ Run [Claude Code](https://claude.ai/code) with SOPS-encrypted secrets automatica
 
 ## Quick Start
 
-### 1. Install Dependencies
+After installation:
 
 ```bash
-# macOS
-brew install sops age
-
-# Debian/Ubuntu
-sudo apt install age
-# SOPS: https://github.com/getsops/sops/releases
-```
-
-### 2. Install claude-sops
-
-```bash
-git clone https://github.com/jordanburke/claude-sops.git
-cd claude-sops
-./install.sh
-```
-
-The installer will:
-- Symlink `claude-sops` to `~/.local/bin/`
-- Generate an age key pair (optional)
-- Create a secrets template (optional)
-
-### 3. Create Your Secrets
-
-```bash
-# Create and encrypt secrets in one step
+# 1. Create and encrypt your secrets
 sops ~/.config/sops/secrets.yaml
-```
 
-This opens your `$EDITOR` with a template. Save and it's encrypted.
-
-### 4. Run Claude
-
-```bash
+# 2. Run Claude with secrets loaded
 claude-sops
-```
 
-That's it! Your secrets are now available as environment variables.
+# 3. Verify setup
+claude-sops --check
+```
 
 ## Usage
 
@@ -170,6 +171,19 @@ sops updatekeys secrets.yaml
 │   ├── keys.txt         # Your private key (NEVER share)
 │   └── public.txt       # Your public key (share freely)
 └── secrets.yaml         # Encrypted secrets
+
+~/.local/share/claude-sops/  # Cloned repo (remote install)
+~/.local/bin/claude-sops     # Symlink to script
+```
+
+## Update
+
+```bash
+# If installed via one-liner
+git -C ~/.local/share/claude-sops pull
+
+# If installed via manual clone
+cd /path/to/claude-sops && git pull
 ```
 
 ## Commands Reference
@@ -212,18 +226,30 @@ brew install sops  # macOS
 npm install -g @anthropic-ai/claude-code
 ```
 
+### PATH issues
+
+If `claude-sops` isn't found after install, add to your shell config:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
 ## Security Notes
 
 - Private keys (`keys.txt`) should **never** be committed to git
-- Add `*.txt` to `.gitignore` in your age directory
 - Secrets are decrypted only in memory, never written to disk
 - Use separate secrets files for dev/staging/prod
+- Rotate keys when team members leave: `sops -r secrets.yaml`
 
 ## Uninstall
 
 ```bash
-cd claude-sops
-./uninstall.sh
+# If you have the repo locally
+cd claude-sops && ./uninstall.sh
+
+# Or manually
+rm ~/.local/bin/claude-sops
+rm -rf ~/.local/share/claude-sops  # if remote installed
 ```
 
 This removes the symlink but preserves your secrets and keys.
