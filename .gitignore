@@ -1,0 +1,18 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Never commit secrets or keys
+*.pem
+*.key
+secrets.yaml
+secrets.yml
+.env
+.env.*
