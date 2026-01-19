@@ -43,13 +43,15 @@ cd claude-sops
 After installation:
 
 ```bash
-# 1. Create and encrypt your secrets
-sops ~/.config/sops/secrets.yaml
+# 1. Create and encrypt your secrets (per-project or global)
+sops secrets/infra.yaml          # Project-local (recommended)
+# or
+sops ~/.config/sops/secrets.yaml # Global fallback
 
-# 2. Run Claude with secrets loaded
+# 2. Run Claude with secrets loaded (auto-discovers secrets file)
 claude-sops
 
-# 3. Verify setup
+# 3. Verify setup and see which file is being used
 claude-sops --check
 ```
 
@@ -74,11 +76,26 @@ claude-sops --help
 
 ## Configuration
 
+### Secrets File Discovery
+
+`claude-sops` automatically finds your secrets file (first match wins):
+
+1. **`CLAUDE_SOPS_FILE`** environment variable (explicit override)
+2. **`--secrets FILE`** flag (explicit override)
+3. **Project-local files** (walks up from current directory to git root):
+   - `secrets/infra.yaml`
+   - `secrets/secrets.yaml`
+   - `.secrets.yaml`
+   - `secrets.yaml`
+4. **Global fallback**: `~/.config/sops/secrets.yaml`
+
+Use `claude-sops --check` to see which file is discovered and its source.
+
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAUDE_SOPS_FILE` | `~/.config/sops/secrets.yaml` | Path to encrypted secrets |
+| `CLAUDE_SOPS_FILE` | *(auto-discovered)* | Override secrets file path |
 | `SOPS_AGE_KEY_FILE` | `~/.config/sops/age/keys.txt` | Path to age private key |
 
 ### Secrets File Format
@@ -165,13 +182,22 @@ sops updatekeys secrets.yaml
 ## File Structure
 
 ```
+# Project-local secrets (recommended)
+my-project/
+├── secrets/
+│   └── infra.yaml       # Project secrets (git-ignored, SOPS-encrypted)
+├── .sops.yaml           # SOPS config for this project
+└── ...
+
+# Global configuration
 ~/.config/sops/
 ├── .sops.yaml           # SOPS config (which keys can decrypt)
 ├── age/
 │   ├── keys.txt         # Your private key (NEVER share)
 │   └── public.txt       # Your public key (share freely)
-└── secrets.yaml         # Encrypted secrets
+└── secrets.yaml         # Global fallback secrets
 
+# Installation
 ~/.local/share/claude-sops/  # Cloned repo (remote install)
 ~/.local/bin/claude-sops     # Symlink to script
 ```

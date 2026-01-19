@@ -18,8 +18,8 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration with defaults
-SECRETS_FILE="${CLAUDE_SOPS_FILE:-$HOME/.config/sops/secrets.yaml}"
 AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}"
+SECRETS_FILE=""  # Set via discovery or --secrets flag
 
 # Export for SOPS
 export SOPS_AGE_KEY_FILE="$AGE_KEY_FILE"
@@ -34,6 +34,58 @@ log_warn() {
 
 log_info() {
     echo -e "${GREEN}claude-sops:${NC} $1" >&2
+}
+
+# Track how secrets file was discovered (for --check output)
+SECRETS_SOURCE=""
+
+find_secrets_file() {
+    # 1. Explicit override via env var always wins
+    if [ -n "${CLAUDE_SOPS_FILE:-}" ] && [ -f "$CLAUDE_SOPS_FILE" ]; then
+        SECRETS_SOURCE="from CLAUDE_SOPS_FILE env"
+        echo "$CLAUDE_SOPS_FILE"
+        return 0
+    fi
+
+    # 2. Walk up from current directory
+    local dir="$PWD"
+    local git_root=""
+
+    # Find git root if in a repo
+    if git rev-parse --git-dir &>/dev/null 2>&1; then
+        git_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+    fi
+
+    while [ "$dir" != "/" ]; do
+        for candidate in \
+            "$dir/secrets/infra.yaml" \
+            "$dir/secrets/secrets.yaml" \
+            "$dir/.secrets.yaml" \
+            "$dir/secrets.yaml"; do
+            if [ -f "$candidate" ]; then
+                SECRETS_SOURCE="auto-discovered"
+                echo "$candidate"
+                return 0
+            fi
+        done
+
+        # Stop at git root
+        if [ -n "$git_root" ] && [ "$dir" = "$git_root" ]; then
+            break
+        fi
+
+        dir="$(dirname "$dir")"
+    done
+
+    # 3. Fall back to global
+    local global="$HOME/.config/sops/secrets.yaml"
+    if [ -f "$global" ]; then
+        SECRETS_SOURCE="global fallback"
+        echo "$global"
+        return 0
+    fi
+
+    return 1
 }
 
 check_dependencies() {
@@ -77,18 +129,6 @@ check_age_key() {
     fi
 }
 
-check_secrets_file() {
-    if [ ! -f "$SECRETS_FILE" ]; then
-        log_error "Secrets file not found: $SECRETS_FILE"
-        echo ""
-        echo "Create your secrets file and encrypt it with SOPS:"
-        echo "  sops $SECRETS_FILE"
-        echo ""
-        echo "Or set CLAUDE_SOPS_FILE to your secrets location."
-        exit 1
-    fi
-}
-
 validate_secrets() {
     # Quick validation that SOPS can decrypt the file
     if ! sops -d "$SECRETS_FILE" > /dev/null 2>&1; then
@@ -115,24 +155,37 @@ OPTIONS:
     -c, --check     Validate setup without running Claude
     --secrets FILE  Override secrets file path
 
+SECRETS FILE DISCOVERY:
+    claude-sops automatically finds your secrets file (first match wins):
+
+    1. CLAUDE_SOPS_FILE environment variable (explicit override)
+    2. --secrets FILE flag (explicit override)
+    3. Project-local files (walks up from current directory to git root):
+       - secrets/infra.yaml
+       - secrets/secrets.yaml
+       - .secrets.yaml
+       - secrets.yaml
+    4. Global fallback: ~/.config/sops/secrets.yaml
+
+    Use --check to see which file is discovered.
+
 ENVIRONMENT:
-    CLAUDE_SOPS_FILE     Path to encrypted secrets file
-                         Default: ~/.config/sops/secrets.yaml
+    CLAUDE_SOPS_FILE     Override secrets file path (highest priority)
 
     SOPS_AGE_KEY_FILE    Path to age private key
                          Default: ~/.config/sops/age/keys.txt
 
 EXAMPLES:
-    # Run Claude with secrets
+    # Run Claude with auto-discovered secrets
     claude-sops
 
     # Run Claude in a specific directory
     claude-sops -- /path/to/project
 
-    # Use a different secrets file
+    # Use a specific secrets file
     claude-sops --secrets ~/projects/myapp/secrets.yaml
 
-    # Validate setup
+    # Validate setup and see which file is used
     claude-sops --check
 
 SETUP:
@@ -143,8 +196,9 @@ SETUP:
        mkdir -p ~/.config/sops/age
        age-keygen -o ~/.config/sops/age/keys.txt
 
-    3. Create and encrypt secrets:
-       sops ~/.config/sops/secrets.yaml
+    3. Create and encrypt secrets (per-project or global):
+       sops secrets/infra.yaml          # Project-local
+       sops ~/.config/sops/secrets.yaml # Global fallback
 
     4. Run Claude with secrets:
        claude-sops
@@ -174,6 +228,7 @@ main() {
                 ;;
             --secrets)
                 SECRETS_FILE="$2"
+                SECRETS_SOURCE="from --secrets flag"
                 shift 2
                 ;;
             --)
@@ -191,13 +246,30 @@ main() {
     # Run checks
     check_dependencies
     check_age_key
-    check_secrets_file
+
+    # Determine secrets file (--secrets flag takes precedence, then discovery)
+    if [ -z "${SECRETS_FILE:-}" ]; then
+        SECRETS_FILE=$(find_secrets_file) || {
+            log_error "No secrets file found"
+            echo ""
+            echo "Searched for:"
+            echo "  - secrets/infra.yaml (in project)"
+            echo "  - secrets/secrets.yaml (in project)"
+            echo "  - .secrets.yaml (in project)"
+            echo "  - secrets.yaml (in project)"
+            echo "  - ~/.config/sops/secrets.yaml (global)"
+            echo ""
+            echo "Create one with: sops secrets/infra.yaml"
+            exit 1
+        }
+    fi
+
     validate_secrets
 
     if [ "$check_only" = true ]; then
         log_info "Setup validated successfully!"
         echo ""
-        echo "Secrets file: $SECRETS_FILE"
+        echo "Secrets file: $SECRETS_FILE ($SECRETS_SOURCE)"
         echo "Age key file: $AGE_KEY_FILE"
         echo ""
         echo "Available secrets (keys only):"

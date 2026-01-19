@@ -18,10 +18,15 @@ claude-sops/
 ## How It Works
 
 1. User runs `claude-sops`
-2. Script validates: sops installed, age key exists, secrets file exists
-3. Calls `sops exec-env <secrets-file> 'claude "$@"'`
-4. Claude runs with decrypted secrets as ENV vars
-5. MCP servers inherit ENV vars from parent process
+2. Script validates: sops installed, age key exists
+3. **Discovers secrets file** (first match wins):
+   - `CLAUDE_SOPS_FILE` env var
+   - `--secrets` flag
+   - Project-local: `secrets/infra.yaml`, `secrets/secrets.yaml`, `.secrets.yaml`, `secrets.yaml` (walks up to git root)
+   - Global fallback: `~/.config/sops/secrets.yaml`
+4. Calls `sops exec-env <secrets-file> 'claude "$@"'`
+5. Claude runs with decrypted secrets as ENV vars
+6. MCP servers inherit ENV vars from parent process
 
 ## Key Files
 
@@ -29,9 +34,10 @@ claude-sops/
 
 The main wrapper script. Features:
 - Dependency checking (sops, age, claude)
-- Configurable paths via env vars
-- `--check` flag for validation
+- **Auto-discovery** of secrets files (project-local → global fallback)
+- `--check` flag for validation (shows discovered file and source)
 - `--secrets` flag to override secrets path
+- `CLAUDE_SOPS_FILE` env var for explicit override
 - Helpful error messages with fix instructions
 
 ### install.sh
@@ -46,9 +52,18 @@ Interactive installer that:
 
 | Setting | Default Path |
 |---------|--------------|
-| Secrets file | `~/.config/sops/secrets.yaml` |
+| Secrets file | Auto-discovered (see discovery order above) |
 | Age private key | `~/.config/sops/age/keys.txt` |
 | SOPS config | `~/.config/sops/.sops.yaml` |
+
+### Discovery Search Order
+
+When no `--secrets` flag or `CLAUDE_SOPS_FILE` is set, searches from current directory up to git root:
+1. `secrets/infra.yaml`
+2. `secrets/secrets.yaml`
+3. `.secrets.yaml`
+4. `secrets.yaml`
+5. Falls back to `~/.config/sops/secrets.yaml`
 
 ## Common Development Tasks
 
