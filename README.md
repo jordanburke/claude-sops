@@ -43,21 +43,25 @@ cd claude-sops
 After installation:
 
 ```bash
-# 1. Create and encrypt your secrets (per-project or global)
-sops secrets/infra.yaml          # Project-local (recommended)
-# or
-sops ~/.config/sops/secrets.yaml # Global fallback
+# Interactive setup (recommended for new projects)
+claude-sops --init
 
-# 2. Run Claude with secrets loaded (auto-discovers secrets file)
+# Or manually create secrets
+sops secrets/infra.yaml
+
+# Run Claude with secrets loaded
 claude-sops
 
-# 3. Verify setup and see which file is being used
+# Verify setup
 claude-sops --check
 ```
 
 ## Usage
 
 ```bash
+# Interactive setup for new projects
+claude-sops --init
+
 # Run Claude with secrets
 claude-sops
 

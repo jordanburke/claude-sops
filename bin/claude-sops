@@ -142,6 +142,130 @@ validate_secrets() {
     fi
 }
 
+init_secrets() {
+    log_info "Initializing secrets for this project..."
+    echo ""
+
+    # 1. Check/create age key
+    if [ ! -f "$AGE_KEY_FILE" ]; then
+        echo "No age key found at $AGE_KEY_FILE"
+        read -p "Generate a new age key? [Y/n] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            mkdir -p "$(dirname "$AGE_KEY_FILE")"
+            age-keygen -o "$AGE_KEY_FILE" 2>&1
+            echo ""
+            log_info "Age key created at $AGE_KEY_FILE"
+        else
+            log_error "Cannot continue without an age key"
+            exit 1
+        fi
+    else
+        log_info "Using existing age key: $AGE_KEY_FILE"
+    fi
+
+    # Get public key for .sops.yaml
+    local public_key
+    public_key=$(grep "public key:" "$AGE_KEY_FILE" | cut -d: -f2 | tr -d ' ')
+    if [ -z "$public_key" ]; then
+        public_key=$(age-keygen -y "$AGE_KEY_FILE" 2>/dev/null)
+    fi
+
+    # 2. Determine where to create secrets
+    local git_root=""
+    local target_dir="$PWD"
+    local secrets_path=""
+
+    if git rev-parse --git-dir &>/dev/null 2>&1; then
+        git_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+        target_dir="$git_root"
+    fi
+
+    echo ""
+    echo "Where should secrets be stored?"
+    echo "  1) secrets/infra.yaml (recommended for projects)"
+    echo "  2) .secrets.yaml (hidden in project root)"
+    echo "  3) ~/.config/sops/secrets.yaml (global)"
+    read -p "Choice [1]: " -n 1 -r choice
+    echo
+
+    case "${choice:-1}" in
+        2) secrets_path="$target_dir/.secrets.yaml" ;;
+        3) secrets_path="$HOME/.config/sops/secrets.yaml" ;;
+        *) secrets_path="$target_dir/secrets/infra.yaml" ;;
+    esac
+
+    # 3. Create directory if needed
+    local secrets_dir
+    secrets_dir="$(dirname "$secrets_path")"
+    if [ ! -d "$secrets_dir" ]; then
+        mkdir -p "$secrets_dir"
+        log_info "Created directory: $secrets_dir"
+    fi
+
+    # 4. Create .sops.yaml if it doesn't exist
+    local sops_config="$secrets_dir/.sops.yaml"
+    if [ ! -f "$sops_config" ]; then
+        cat > "$sops_config" << EOF
+# SOPS configuration
+# Secrets encrypted with these keys can be decrypted by any of them
+creation_rules:
+  - path_regex: \.yaml$
+    age: >-
+      $public_key
+EOF
+        log_info "Created SOPS config: $sops_config"
+    fi
+
+    # 5. Check for template
+    local template_file="$secrets_dir/$(basename "$secrets_path" .yaml).yaml.template"
+    if [ -f "$template_file" ]; then
+        echo ""
+        log_info "Found template: $template_file"
+        read -p "Use template as starting point? [Y/n] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            cp "$template_file" "$secrets_path"
+            log_info "Copied template to $secrets_path"
+        fi
+    fi
+
+    # 6. Create/edit secrets file
+    echo ""
+    if [ -f "$secrets_path" ]; then
+        log_info "Encrypting and opening: $secrets_path"
+        sops "$secrets_path"
+    else
+        log_info "Creating new secrets file: $secrets_path"
+        # Create minimal starter template
+        cat > "$secrets_path" << 'EOF'
+# Add your secrets here (will be encrypted on save)
+# Example:
+# API_KEY: your-api-key-here
+# DATABASE_URL: postgres://user:pass@host:5432/db
+
+EOF
+        sops "$secrets_path"
+    fi
+
+    # 7. Add to .gitignore if in a git repo
+    if [ -n "$git_root" ]; then
+        local gitignore="$secrets_dir/.gitignore"
+        local secrets_basename
+        secrets_basename="$(basename "$secrets_path")"
+        if [ ! -f "$gitignore" ] || ! grep -q "^$secrets_basename$" "$gitignore" 2>/dev/null; then
+            echo "$secrets_basename" >> "$gitignore"
+            log_info "Added $secrets_basename to $gitignore"
+        fi
+    fi
+
+    echo ""
+    log_info "Setup complete!"
+    echo ""
+    echo "Your secrets file: $secrets_path"
+    echo "Run 'claude-sops' to start Claude with these secrets loaded."
+}
+
 show_help() {
     cat << 'EOF'
 claude-sops - Run Claude Code with SOPS-decrypted secrets
@@ -153,6 +277,8 @@ OPTIONS:
     -h, --help      Show this help message
     -v, --verbose   Show which secrets file is being used
     -c, --check     Validate setup without running Claude
+    -i, --init      Interactive setup for new projects
+    --upgrade       Update claude-sops to latest version
     --secrets FILE  Override secrets file path
 
 SECRETS FILE DISCOVERY:
@@ -226,6 +352,26 @@ main() {
                 check_only=true
                 shift
                 ;;
+            -i|--init)
+                check_dependencies
+                init_secrets
+                exit 0
+                ;;
+            --upgrade)
+                log_info "Upgrading claude-sops..."
+                local script_dir
+                script_dir="$(dirname "$(readlink -f "$0")")"
+                local repo_dir
+                repo_dir="$(dirname "$script_dir")"
+                if [ -d "$repo_dir/.git" ]; then
+                    git -C "$repo_dir" pull
+                    log_info "Upgraded successfully!"
+                else
+                    log_error "Not a git repo: $repo_dir"
+                    echo "Reinstall with: curl -fsSL https://raw.githubusercontent.com/jordanburke/claude-sops/main/install.sh | bash"
+                fi
+                exit 0
+                ;;
             --secrets)
                 SECRETS_FILE="$2"
                 SECRETS_SOURCE="from --secrets flag"
@@ -259,7 +405,8 @@ main() {
             echo "  - secrets.yaml (in project)"
             echo "  - ~/.config/sops/secrets.yaml (global)"
             echo ""
-            echo "Create one with: sops secrets/infra.yaml"
+            echo "Run 'claude-sops --init' for interactive setup"
+            echo "Or create manually: sops secrets/infra.yaml"
             exit 1
         }
     fi

@@ -35,9 +35,11 @@ claude-sops/
 The main wrapper script. Features:
 - Dependency checking (sops, age, claude)
 - **Auto-discovery** of secrets files (project-local → global fallback)
+- `--init` flag for interactive setup (creates age key, .sops.yaml, secrets file)
 - `--check` flag for validation (shows discovered file and source)
 - `--secrets` flag to override secrets path
 - `CLAUDE_SOPS_FILE` env var for explicit override
+- Template detection (uses `*.yaml.template` if found)
 - Helpful error messages with fix instructions
 
 ### install.sh
@@ -70,6 +72,9 @@ When no `--secrets` flag or `CLAUDE_SOPS_FILE` is set, searches from current dir
 ### Testing the Script
 
 ```bash
+# Interactive setup (creates age key, .sops.yaml, secrets file)
+./bin/claude-sops --init
+
 # Check without running Claude
 ./bin/claude-sops --check
 
