@@ -242,29 +242,38 @@ EOF
     if [ -f "$secrets_basename" ]; then
         # Check if already encrypted (has sops metadata)
         if grep -q "sops:" "$secrets_basename" 2>/dev/null; then
-            log_info "Opening encrypted file: $secrets_path"
-            sops "$secrets_basename"
+            log_info "File already encrypted: $secrets_path"
         else
-            log_info "Encrypting and opening: $secrets_path"
-            # Encrypt in place first, then open for editing
+            log_info "Encrypting: $secrets_path"
             sops -e -i "$secrets_basename"
-            sops "$secrets_basename"
         fi
     else
         log_info "Creating new secrets file: $secrets_path"
-        # Create minimal starter template
+        # Create simple starter template
         cat > "$secrets_basename" << 'EOF'
-# Add your secrets here (will be encrypted on save)
+# Secrets - these become environment variables for Claude and MCP servers
+# Add your keys below, then save.
+
 # Example:
-# API_KEY: your-api-key-here
+GITHUB_TOKEN: ghp_your_token_here
+# ANTHROPIC_API_KEY: sk-ant-xxx
 # DATABASE_URL: postgres://user:pass@host:5432/db
 
 EOF
         sops -e -i "$secrets_basename"
-        sops "$secrets_basename"
     fi
 
     cd "$original_dir" || exit 1
+
+    # Ask if user wants to edit now
+    echo ""
+    read -p "Edit secrets now? [Y/n] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        sops "$secrets_path"
+    else
+        log_info "Edit later with: sops $secrets_path"
+    fi
 
     # 7. Add to .gitignore if in a git repo
     if [ -n "$git_root" ]; then
