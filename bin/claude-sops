@@ -232,30 +232,39 @@ EOF
 
     # 6. Create/edit secrets file
     echo ""
-    if [ -f "$secrets_path" ]; then
+
+    # Run sops from the secrets directory so it finds .sops.yaml
+    local original_dir="$PWD"
+    cd "$secrets_dir" || exit 1
+    local secrets_basename
+    secrets_basename="$(basename "$secrets_path")"
+
+    if [ -f "$secrets_basename" ]; then
         # Check if already encrypted (has sops metadata)
-        if grep -q "sops:" "$secrets_path" 2>/dev/null; then
+        if grep -q "sops:" "$secrets_basename" 2>/dev/null; then
             log_info "Opening encrypted file: $secrets_path"
-            sops "$secrets_path"
+            sops "$secrets_basename"
         else
             log_info "Encrypting and opening: $secrets_path"
             # Encrypt in place first, then open for editing
-            sops -e -i "$secrets_path"
-            sops "$secrets_path"
+            sops -e -i "$secrets_basename"
+            sops "$secrets_basename"
         fi
     else
         log_info "Creating new secrets file: $secrets_path"
         # Create minimal starter template
-        cat > "$secrets_path" << 'EOF'
+        cat > "$secrets_basename" << 'EOF'
 # Add your secrets here (will be encrypted on save)
 # Example:
 # API_KEY: your-api-key-here
 # DATABASE_URL: postgres://user:pass@host:5432/db
 
 EOF
-        sops -e -i "$secrets_path"
-        sops "$secrets_path"
+        sops -e -i "$secrets_basename"
+        sops "$secrets_basename"
     fi
+
+    cd "$original_dir" || exit 1
 
     # 7. Add to .gitignore if in a git repo
     if [ -n "$git_root" ]; then
