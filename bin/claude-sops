@@ -233,8 +233,16 @@ EOF
     # 6. Create/edit secrets file
     echo ""
     if [ -f "$secrets_path" ]; then
-        log_info "Encrypting and opening: $secrets_path"
-        sops "$secrets_path"
+        # Check if already encrypted (has sops metadata)
+        if grep -q "sops:" "$secrets_path" 2>/dev/null; then
+            log_info "Opening encrypted file: $secrets_path"
+            sops "$secrets_path"
+        else
+            log_info "Encrypting and opening: $secrets_path"
+            # Encrypt in place first, then open for editing
+            sops -e -i "$secrets_path"
+            sops "$secrets_path"
+        fi
     else
         log_info "Creating new secrets file: $secrets_path"
         # Create minimal starter template
@@ -245,6 +253,7 @@ EOF
 # DATABASE_URL: postgres://user:pass@host:5432/db
 
 EOF
+        sops -e -i "$secrets_path"
         sops "$secrets_path"
     fi
 
