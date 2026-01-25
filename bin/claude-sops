@@ -456,7 +456,12 @@ main() {
     fi
 
     # Run Claude with decrypted secrets as environment variables
-    exec sops exec-env "$SECRETS_FILE" "claude ${claude_args[*]}"
+    # Handle empty array safely with set -u
+    if [ ${#claude_args[@]} -eq 0 ]; then
+        exec sops exec-env "$SECRETS_FILE" "claude"
+    else
+        exec sops exec-env "$SECRETS_FILE" "claude ${claude_args[*]}"
+    fi
 }
 
 main "$@"
