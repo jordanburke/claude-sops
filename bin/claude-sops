@@ -275,16 +275,8 @@ EOF
         log_info "Edit later with: sops $secrets_path"
     fi
 
-    # 7. Add to .gitignore if in a git repo
-    if [ -n "$git_root" ]; then
-        local gitignore="$secrets_dir/.gitignore"
-        local secrets_basename
-        secrets_basename="$(basename "$secrets_path")"
-        if [ ! -f "$gitignore" ] || ! grep -q "^$secrets_basename$" "$gitignore" 2>/dev/null; then
-            echo "$secrets_basename" >> "$gitignore"
-            log_info "Added $secrets_basename to $gitignore"
-        fi
-    fi
+    # 7. Note: We do NOT gitignore the encrypted file - that's the point of SOPS!
+    # The encrypted file is safe to commit. Only unencrypted files should be ignored.
 
     echo ""
     log_info "Setup complete!"
@@ -305,6 +297,8 @@ OPTIONS:
     -v, --verbose   Show which secrets file is being used
     -c, --check     Validate setup without running Claude
     -i, --init      Interactive setup for new projects
+    -e, --edit [FILE]  Edit secrets file (uses auto-discovered if not specified)
+    --view [FILE]   View decrypted secrets (uses auto-discovered if not specified)
     --upgrade       Update claude-sops to latest version
     --secrets FILE  Override secrets file path
 
@@ -397,6 +391,33 @@ main() {
                     log_error "Not a git repo: $repo_dir"
                     echo "Reinstall with: curl -fsSL https://raw.githubusercontent.com/jordanburke/claude-sops/main/install.sh | bash"
                 fi
+                exit 0
+                ;;
+            -e|--edit)
+                check_dependencies
+                local file_to_edit="${2:-}"
+                if [ -z "$file_to_edit" ]; then
+                    file_to_edit=$(find_secrets_file) || {
+                        log_error "No secrets file found. Specify one: claude-sops --edit <file>"
+                        exit 1
+                    }
+                fi
+                log_info "Editing: $file_to_edit"
+                sops "$file_to_edit"
+                exit 0
+                ;;
+            --view)
+                check_dependencies
+                local file_to_view="${2:-}"
+                if [ -z "$file_to_view" ]; then
+                    file_to_view=$(find_secrets_file) || {
+                        log_error "No secrets file found. Specify one: claude-sops --view <file>"
+                        exit 1
+                    }
+                fi
+                log_info "Decrypted contents of: $file_to_view"
+                echo ""
+                sops -d "$file_to_view"
                 exit 0
                 ;;
             --secrets)
